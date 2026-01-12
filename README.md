@@ -20,6 +20,7 @@ python scripts/prepare_data.py --input-xlsx dataset/T15-2020.1.7.xlsx dataset/T2
 python scripts/train.py --bf16 --gradient-checkpointing
 ```
 - 既定モデル: `sonoisa/t5-base-japanese-v1.1`
+- 再開: `--resume-from outputs/t5-simplify`（最新のcheckpointから）または `--resume-from outputs/t5-simplify/final`（finalを初期値として再開）
 ```
 python scripts/train.py \
     --bf16 \
@@ -63,6 +64,17 @@ python scripts/evaluate.py \
 python scripts/plot_loss.py \
     --log-file outputs/logs/loss_curve.json \
     --output outputs/logs/loss_curve.png
+```
+
+### 5. 予測
+```
+python scripts/predict.py --model outputs/t5-simplify/final --text "海辺のデッキでサーフボードのようなものをしようとしている人がいる"
+```
+```
+python scripts/predict.py --model outputs/t5-simplify/final --input-file data/input.txt
+```
+```
+python scripts/predict.py --model outputs/t5-simplify/final --input-file data/input.txt --json
 ```
 
 we need fugashi

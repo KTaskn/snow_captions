@@ -22,6 +22,11 @@ def parse_args():
         default="outputs/t5-simplify",
         help="Output directory for checkpoints.",
     )
+    parser.add_argument(
+        "--resume-from",
+        default=None,
+        help="Resume training from a checkpoint or model dir (e.g. outputs/t5-simplify).",
+    )
     parser.add_argument("--max-source-length", type=int, default=256)
     parser.add_argument("--max-target-length", type=int, default=256)
     parser.add_argument("--per-device-train-batch-size", type=int, default=8)
@@ -112,6 +117,23 @@ def parse_args():
         help="Force CPU training (slow, for debugging).",
     )
     return parser.parse_args()
+
+
+def resolve_resume_checkpoint(path_value):
+    if not path_value:
+        return None, None
+    path = Path(path_value)
+    if not path.exists():
+        raise SystemExit(f"Resume path not found: {path}")
+    if path.is_file():
+        raise SystemExit(f"Resume path must be a directory: {path}")
+    if (path / "trainer_state.json").exists():
+        return path, path
+    checkpoints = [p for p in path.iterdir() if p.is_dir() and p.name.startswith("checkpoint-")]
+    if not checkpoints:
+        return path, None
+    latest = max(checkpoints, key=lambda p: int(p.name.split("-")[-1]))
+    return latest, latest
 
 
 def build_training_args(training_cls, kwargs):
@@ -259,8 +281,11 @@ def main():
     if args.max_valid_samples:
         dataset["validation"] = dataset["validation"].select(range(args.max_valid_samples))
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False)
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
+    resume_model_path, resume_checkpoint = resolve_resume_checkpoint(args.resume_from)
+    model_source = str(resume_model_path) if resume_model_path else args.model_name
+
+    tokenizer = AutoTokenizer.from_pretrained(model_source, use_fast=False)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_source)
 
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
@@ -409,7 +434,10 @@ def main():
         compute_metrics=compute_metrics,
     )
 
-    trainer.train()
+    if resume_checkpoint:
+        trainer.train(resume_from_checkpoint=str(resume_checkpoint))
+    else:
+        trainer.train()
     trainer.save_model(os.path.join(args.output_dir, "final"))
 
 
