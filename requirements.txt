@@ -1,0 +1,13 @@
+transformers
+datasets
+torch
+accelerate
+sentencepiece
+pandas
+openpyxl
+sacrebleu
+rouge-score
+fugashi
+ipadic
+matplotlib
+hf_transfer
