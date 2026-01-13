@@ -77,8 +77,81 @@ python scripts/predict.py --model outputs/t5-simplify/final --input-file data/in
 python scripts/predict.py --model outputs/t5-simplify/final --input-file data/input.txt --json
 ```
 
+### 6. STAIR-captionsのキャプション生成・スコアリング・トークン検証
+#### 6.1 STAIR-captionsのtrain/valに対してキャプション生成
+```
+python scripts/generate_stair_simplified.py \
+  --model outputs/t5-simplify/final \
+  --input-json STAIR-captions/stair_captions_v1.2_train.json \
+  --output-json outputs/stair_simplified_train.json \
+  --batch-size 1024 \
+  --num-beams 4 \
+  --no-repeat-ngram-size 3 \
+  --repetition-penalty 1.2 \
+  --bf16
+```
+```
+python scripts/generate_stair_simplified.py \
+  --model outputs/t5-simplify/final \
+  --input-json STAIR-captions/stair_captions_v1.2_val.json \
+  --output-json outputs/stair_simplified_val.json \
+  --batch-size 512 \
+  --num-beams 4 \
+  --no-repeat-ngram-size 3 \
+  --repetition-penalty 1.2 \
+  --bf16
+```
+- 既定で `caption` を生成結果で上書きし，元のキャプションは `source_caption` に保存
+- `--caption-field` や `--output-caption-field` で入出力フィールド名を変更可能
+- `--num-workers` と `--prefetch-factor` でトークナイズを並列化可能
+
+推奨パラメータ（速度重視）
+```
+--batch-size 512 --num-beams 1 --bf16 --num-workers 4 --prefetch-factor 2 --pin-memory
+```
+推奨パラメータ（品質バランス）
+```
+--batch-size 128 --num-beams 4 --no-repeat-ngram-size 3 --repetition-penalty 1.2 --bf16
+```
+
+#### 6.1.1 シャーディングで並列実行
+```
+python scripts/generate_stair_simplified.py \
+  --model outputs/t5-simplify/final \
+  --input-json STAIR-captions/stair_captions_v1.2_train.json \
+  --output-json outputs/stair_simplified_train.part0.json \
+  --num-shards 4 \
+  --shard-id 0
+```
+- `--num-shards` と `--shard-id` で分割実行（各プロセスで別 `--output-json` を指定）
+
+#### 6.2 より高精度な日本語LMで尤度スコアリング
+```
+python scripts/score_captions.py \
+  --lm-model <lm-path-or-name> \
+  --input-json outputs/stair_simplified_train.json \
+  --output-json outputs/stair_simplified_train_scored.json
+```
+- 追加されるフィールド: `lm_total_logprob`, `lm_avg_logprob`, `lm_ppl`
+
+#### 6.3 TOKENS.txt制約の検証
+```
+python scripts/check_tokens.py \
+  --input-json outputs/stair_simplified_train.json \
+  --failures-output outputs/stair_simplified_train_failures.jsonl \
+  --include-missing-tokens-in-failures \
+  --tokenize fugashi \
+  --mecabrc /etc/mecabrc \
+  --mecab-dicdir /var/lib/mecab/dic/unidic \
+  --missing-tokens-output outputs/stair_simplified_train_failures_missing_tokens.jsonl
+```
+- 失敗例はJSONLで保存（`index`, `id`, `image_id`, `caption`）
+- `--missing-tokens-output` を付けると、未登録トークンの一覧（出現回数付き）をJSONで保存
+- `--include-missing-tokens-in-failures` を付けると、失敗例に `missing_tokens` を追加
+- `--tokenize fugashi` を付けると、MeCab (UniDicなど) の形態素の原形でTOKENSに一致するか判定（UniDicの英語グロスは除去、読みがTOKENSにあれば許容、漢数字は算用数字に正規化）
+
 we need fugashi
 ```
 apt update
-apt install -y mecab libmecab-dev mecab-ipadic-utf8
+apt install -y mecab libmecab-dev mecab-ipadic-utf8 unidic-mecab
 ```

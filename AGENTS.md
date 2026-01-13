@@ -8,6 +8,15 @@
 ## Build, Test, and Development Commands
 - No build, run, or test scripts are defined in this repository.
 - If you add training or evaluation scripts, document the exact commands here (for example: `python -m train --data dataset/…`).
+- Generate simplified STAIR captions:
+  - `python scripts/generate_stair_simplified.py --model outputs/t5-simplify --input-json STAIR-captions/stair_captions_v1.2_train.json --output-json outputs/stair_simplified_train.json`
+  - `python scripts/generate_stair_simplified.py --model outputs/t5-simplify --input-json STAIR-captions/stair_captions_v1.2_val.json --output-json outputs/stair_simplified_val.json`
+- Merge sharded simplification outputs:
+  - `python scripts/merge_stair_simplified_shards.py --input-glob outputs/stair_simplified_train.shard*.json --output-json outputs/stair_simplified_train.json`
+- Score captions with a higher-accuracy LM:
+  - `python scripts/score_captions.py --lm-model <lm-path-or-name> --input-json outputs/stair_simplified_train.json --output-json outputs/stair_simplified_train_scored.json`
+- Check caption tokens against `dataset/TOKENS.txt`:
+  - `python scripts/check_tokens.py --input-json outputs/stair_simplified_train_scored.json --failures-output outputs/stair_simplified_train_token_failures.jsonl`
 
 ## Coding Style & Naming Conventions
 - No coding style tools are configured yet.

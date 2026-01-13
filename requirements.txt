@@ -11,3 +11,4 @@ fugashi
 ipadic
 matplotlib
 hf_transfer
+tqdm
