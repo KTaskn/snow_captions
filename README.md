@@ -145,10 +145,22 @@ python scripts/check_tokens.py \
   --mecab-dicdir /var/lib/mecab/dic/unidic \
   --missing-tokens-output outputs/stair_simplified_train_failures_missing_tokens.jsonl
 ```
+
+```
+python scripts/check_tokens.py \
+  --input-json outputs/stair_simplified_val.json \
+  --failures-output outputs/stair_simplified_val_failures.jsonl \
+  --include-missing-tokens-in-failures \
+  --tokenize fugashi \
+  --mecabrc /etc/mecabrc \
+  --mecab-dicdir /var/lib/mecab/dic/unidic \
+  --missing-tokens-output outputs/stair_simplified_val_failures_missing_tokens.jsonl
+```
+
 - 失敗例はJSONLで保存（`index`, `id`, `image_id`, `caption`）
 - `--missing-tokens-output` を付けると、未登録トークンの一覧（出現回数付き）をJSONで保存
 - `--include-missing-tokens-in-failures` を付けると、失敗例に `missing_tokens` を追加
-- `--tokenize fugashi` を付けると、MeCab (UniDicなど) の形態素の原形でTOKENSに一致するか判定（UniDicの英語グロスは除去、読みがTOKENSにあれば許容、漢数字は算用数字に正規化）
+- `--tokenize fugashi` を付けると、MeCab (UniDicなど) の形態素の原形でTOKENSに一致するか判定（UniDicのグロスや用法メモを除去、読みがTOKENSにあれば許容、漢数字は算用数字に正規化）
 
 we need fugashi
 ```

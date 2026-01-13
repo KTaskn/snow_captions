@@ -109,9 +109,7 @@ def strip_english_gloss(token):
     head, tail = token.split("-", 1)
     if not head or not tail:
         return token
-    if all(ord(ch) < 128 for ch in tail):
-        return head
-    return token
+    return head
 
 
 def kata_to_hira(text):
