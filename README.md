@@ -162,6 +162,30 @@ python scripts/check_tokens.py \
 - `--include-missing-tokens-in-failures` を付けると、失敗例に `missing_tokens` を追加
 - `--tokenize fugashi` を付けると、MeCab (UniDicなど) の形態素の原形でTOKENSに一致するか判定（UniDicのグロスや用法メモを除去、読みがTOKENSにあれば許容、漢数字は算用数字に正規化）
 
+#### 6.4 TOKENS.txt内語彙への置換
+```
+python scripts/replace_tokens.py \
+  --input-json outputs/stair_simplified_train.json \
+  --output-json outputs/stair_simplified_train_replaced.json \
+  --replacements scripts/token_replacements.json \
+  --output-field caption_replaced \
+  --tokenize fugashi \
+  --mecabrc /etc/mecabrc \
+  --mecab-dicdir /var/lib/mecab/dic/unidic
+```
+
+```
+python scripts/replace_tokens.py \
+  --input-json outputs/stair_simplified_val.json \
+  --output-json outputs/stair_simplified_val_replaced.json \
+  --replacements scripts/token_replacements.json \
+  --output-field caption_replaced \
+  --tokenize fugashi \
+  --mecabrc /etc/mecabrc \
+  --mecab-dicdir /var/lib/mecab/dic/unidic
+```
+- `scripts/token_replacements.json` の置換辞書を使って語彙をTOKENS内に寄せる
+
 we need fugashi
 ```
 apt update
