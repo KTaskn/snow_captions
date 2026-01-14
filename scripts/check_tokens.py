@@ -226,6 +226,13 @@ def make_tokenizer(mode, mecabrc=None, mecab_dicdir=None):
     raise ValueError(f"Unknown mode: {mode}")
 
 
+def try_make_fugashi_tagger(mecabrc=None, mecab_dicdir=None):
+    try:
+        return make_tokenizer("fugashi", mecabrc, mecab_dicdir)
+    except SystemExit:
+        return None
+
+
 def extract_missing_tokens(text, token_set, lengths):
     if not text:
         return []
@@ -309,6 +316,7 @@ def main():
     failures = []
     missing_tokens = Counter()
     tokenizer = make_tokenizer(args.tokenize, args.mecabrc, args.mecab_dicdir)
+    fallback_tagger = None
     for idx, ann in enumerate(annotations):
         if args.caption_field not in ann:
             raise SystemExit(f"Missing field '{args.caption_field}' in annotations.")
@@ -316,6 +324,17 @@ def main():
         if tokenizer is None:
             text = normalize_text(raw_text)
             ok = can_segment(text, token_set, lengths)
+            missing = []
+            if not ok:
+                if fallback_tagger is None:
+                    fallback_tagger = try_make_fugashi_tagger(
+                        args.mecabrc, args.mecab_dicdir
+                    )
+                if fallback_tagger is not None:
+                    missing = extract_missing_tokens_mecab(
+                        raw_text, token_set, fallback_tagger
+                    )
+                    ok = not missing
         else:
             text = raw_text
             missing = extract_missing_tokens_mecab(text, token_set, tokenizer)
@@ -329,7 +348,8 @@ def main():
             }
             if tokenizer is None:
                 if args.missing_tokens_output or args.include_missing_tokens_in_failures:
-                    missing = extract_missing_tokens(text, token_set, lengths)
+                    if not missing:
+                        missing = extract_missing_tokens(text, token_set, lengths)
                 else:
                     missing = []
             if args.include_missing_tokens_in_failures:

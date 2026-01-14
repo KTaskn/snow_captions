@@ -191,6 +191,131 @@ def is_latin_token(text):
     return True
 
 
+def is_verb_token(token):
+    feature = token.feature
+    for attr in ("pos1", "pos"):
+        value = getattr(feature, attr, None)
+        if not value:
+            continue
+        if isinstance(value, (tuple, list)):
+            value = value[0]
+        if isinstance(value, str) and value.startswith("動詞"):
+            return True
+    return False
+
+
+def _verb_class_from_tag(tag):
+    if not is_verb_token(tag):
+        return None
+    ctype = getattr(tag.feature, "cType", None)
+    if not ctype:
+        return "godan"
+    if "サ行変格" in ctype:
+        return "suru"
+    if "カ行変格" in ctype:
+        return "kuru"
+    if ctype.startswith("上一段") or ctype.startswith("下一段"):
+        return "ichidan"
+    if ctype.startswith("五段"):
+        return "godan"
+    return "godan"
+
+
+_ICHIDAN_HINT = set("いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ")
+
+
+def get_verb_class(lemma, tagger, cache):
+    if lemma in cache:
+        return cache[lemma]
+    if lemma in ("する", "為る"):
+        cache[lemma] = "suru"
+        return cache[lemma]
+    if lemma in ("来る", "くる"):
+        cache[lemma] = "kuru"
+        return cache[lemma]
+    if tagger is not None:
+        tags = list(tagger(lemma))
+        if len(tags) == 1:
+            verb_class = _verb_class_from_tag(tags[0])
+            cache[lemma] = verb_class
+            return cache[lemma]
+    if lemma.endswith("る") and len(lemma) >= 2:
+        prev = lemma[-2]
+        if prev in _ICHIDAN_HINT:
+            cache[lemma] = "ichidan"
+            return cache[lemma]
+    cache[lemma] = "godan"
+    return cache[lemma]
+
+
+def conjugate_te_ta(lemma, form, tagger, cache):
+    if form not in ("て", "で", "た", "だ"):
+        return None
+    verb_class = get_verb_class(lemma, tagger, cache)
+    if not verb_class:
+        return None
+    if verb_class == "suru":
+        return "して" if form in ("て", "で") else "した"
+    if verb_class == "kuru":
+        if lemma == "来る":
+            return "来て" if form in ("て", "で") else "来た"
+        return "きて" if form in ("て", "で") else "きた"
+    if verb_class == "ichidan":
+        stem = lemma[:-1]
+        return stem + ("て" if form in ("て", "で") else "た")
+    last = lemma[-1]
+    stem = lemma[:-1]
+    if lemma in ("行く", "いく"):
+        return stem + ("って" if form in ("て", "で") else "った")
+    mapping = {
+        "う": ("って", "った"),
+        "つ": ("って", "った"),
+        "る": ("って", "った"),
+        "む": ("んで", "んだ"),
+        "ぶ": ("んで", "んだ"),
+        "ぬ": ("んで", "んだ"),
+        "く": ("いて", "いた"),
+        "ぐ": ("いで", "いだ"),
+        "す": ("して", "した"),
+    }
+    if last in mapping:
+        te_form, ta_form = mapping[last]
+        return stem + (te_form if form in ("て", "で") else ta_form)
+    return None
+
+
+def conjugate_negative(lemma, form, tagger, cache):
+    if form not in ("ない", "ぬ"):
+        return None
+    verb_class = get_verb_class(lemma, tagger, cache)
+    if not verb_class:
+        return None
+    if verb_class == "suru":
+        return "し" + form
+    if verb_class == "kuru":
+        if lemma == "来る":
+            return "来" + form
+        return "こ" + form
+    if verb_class == "ichidan":
+        return lemma[:-1] + form
+    last = lemma[-1]
+    stem = lemma[:-1]
+    mapping = {
+        "う": "わ",
+        "つ": "た",
+        "る": "ら",
+        "む": "ま",
+        "ぶ": "ば",
+        "ぬ": "な",
+        "く": "か",
+        "ぐ": "が",
+        "す": "さ",
+    }
+    if last in mapping:
+        return stem + mapping[last] + form
+    return None
+
+
 def make_tagger(mode, mecabrc=None, mecab_dicdir=None):
     if mode == "char":
         return None
@@ -261,8 +386,28 @@ def replace_caption(text, tagger, token_set, replacements):
     if tagger is None:
         return text
     parts = []
-    for token in tagger(text):
+    tokens = list(tagger(text))
+    verb_class_cache = {}
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        base = strip_gloss(token_base_form(token))
+        if base in replacements and is_verb_token(token) and i + 1 < len(tokens):
+            next_surface = tokens[i + 1].surface
+            replacement = replacements[base]
+            conjugated = conjugate_te_ta(
+                replacement, next_surface, tagger, verb_class_cache
+            )
+            if conjugated is None:
+                conjugated = conjugate_negative(
+                    replacement, next_surface, tagger, verb_class_cache
+                )
+            if conjugated is not None:
+                parts.append(conjugated)
+                i += 2
+                continue
         parts.append(normalize_token(token, token_set, replacements))
+        i += 1
     return "".join(parts)
 
 

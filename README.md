@@ -143,7 +143,8 @@ python scripts/check_tokens.py \
   --tokenize fugashi \
   --mecabrc /etc/mecabrc \
   --mecab-dicdir /var/lib/mecab/dic/unidic \
-  --missing-tokens-output outputs/stair_simplified_train_failures_missing_tokens.jsonl
+  --missing-tokens-output outputs/stair_simplified_train_failures_missing_tokens.jsonl \
+  --caption-field caption_replaced
 ```
 
 ```
@@ -154,7 +155,8 @@ python scripts/check_tokens.py \
   --tokenize fugashi \
   --mecabrc /etc/mecabrc \
   --mecab-dicdir /var/lib/mecab/dic/unidic \
-  --missing-tokens-output outputs/stair_simplified_val_failures_missing_tokens.jsonl
+  --missing-tokens-output outputs/stair_simplified_val_failures_missing_tokens.jsonl \
+  --caption-field caption_replaced
 ```
 
 - 失敗例はJSONLで保存（`index`, `id`, `image_id`, `caption`）
