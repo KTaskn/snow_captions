@@ -359,6 +359,13 @@ def normalize_token(token, token_set, replacements):
     kana = token_kana_base(token)
     number = kanji_to_int(base)
 
+    if base in replacements:
+        return replacements[base]
+    if kana and kana in replacements:
+        return replacements[kana]
+    if number is not None and str(number) in replacements:
+        return replacements[str(number)]
+
     # Keep original surface if the token can be validated via base/kana/number.
     if base in token_set:
         return token.surface
@@ -367,12 +374,6 @@ def normalize_token(token, token_set, replacements):
     if number is not None and str(number) in token_set:
         return token.surface
 
-    if base in replacements:
-        return replacements[base]
-    if kana and kana in replacements:
-        return replacements[kana]
-    if number is not None and str(number) in replacements:
-        return replacements[str(number)]
     if kana and kana in token_set:
         return kana
     if number is not None and str(number) in token_set:
