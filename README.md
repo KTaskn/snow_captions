@@ -134,6 +134,21 @@ python scripts/score_captions.py \
 ```
 - 追加されるフィールド: `lm_total_logprob`, `lm_avg_logprob`, `lm_ppl`
 
+#### 6.2.1 source/target の自然さ比較スコアリング
+```
+python scripts/score_fluency.py \
+  --lm-model rinna/japanese-gpt-1b \
+  --input-json outputs/stair_simplified_train.json \
+  --output-json outputs/stair_simplified_train_scored.json \
+  --summary-json outputs/stair_simplified_train_fluency_summary.json \
+  --source-field source_caption \
+  --target-field caption_replaced \
+  --batch-size 8 \
+  --max-length 128 \
+```
+- 追加されるフィールド: `lm_source_ppl`, `lm_target_ppl`, `lm_delta_ppl`
+- ルートに `lm_fluency_scoring` を追加（source の percentile 閾値など）
+
 #### 6.3 TOKENS.txt制約の検証
 ```
 python scripts/check_tokens.py \

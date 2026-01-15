@@ -12,9 +12,9 @@ def parse_args():
     parser.add_argument("--lm-model", required=True, help="HF model name or path.")
     parser.add_argument("--input-json", required=True, help="Input JSON annotations.")
     parser.add_argument(
-        "--output-jsonl",
+        "--output-json",
         required=True,
-        help="Output JSONL path with per-caption scores.",
+        help="Output JSON path with per-caption scores added.",
     )
     parser.add_argument(
         "--summary-json",
@@ -144,36 +144,28 @@ def main():
     source_ppls = []
     target_ppls = []
 
-    output_path = Path(args.output_jsonl)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as out:
-        with torch.inference_mode():
-            for batch in batched(annotations, args.batch_size):
-                source_texts = [str(ann[args.source_field]) for ann in batch]
-                target_texts = [str(ann[args.target_field]) for ann in batch]
+    with torch.inference_mode():
+        for batch in batched(annotations, args.batch_size):
+            source_texts = [str(ann[args.source_field]) for ann in batch]
+            target_texts = [str(ann[args.target_field]) for ann in batch]
 
-                source_totals, source_counts = score_batch(
-                    model, tokenizer, source_texts, device, args.max_length
-                )
-                target_totals, target_counts = score_batch(
-                    model, tokenizer, target_texts, device, args.max_length
-                )
+            source_totals, source_counts = score_batch(
+                model, tokenizer, source_texts, device, args.max_length
+            )
+            target_totals, target_counts = score_batch(
+                model, tokenizer, target_texts, device, args.max_length
+            )
 
-                for ann, s_total, s_count, t_total, t_count in zip(
-                    batch, source_totals, source_counts, target_totals, target_counts
-                ):
-                    s_ppl = ppl_from_total(s_total, s_count)
-                    t_ppl = ppl_from_total(t_total, t_count)
-                    source_ppls.append(s_ppl)
-                    target_ppls.append(t_ppl)
-                    record = {
-                        "id": ann.get("id"),
-                        "image_id": ann.get("image_id"),
-                        "source_ppl": float(s_ppl),
-                        "target_ppl": float(t_ppl),
-                        "delta_ppl": float(t_ppl - s_ppl),
-                    }
-                    out.write(json.dumps(record, ensure_ascii=False) + "\n")
+            for ann, s_total, s_count, t_total, t_count in zip(
+                batch, source_totals, source_counts, target_totals, target_counts
+            ):
+                s_ppl = ppl_from_total(s_total, s_count)
+                t_ppl = ppl_from_total(t_total, t_count)
+                source_ppls.append(s_ppl)
+                target_ppls.append(t_ppl)
+                ann["lm_source_ppl"] = float(s_ppl)
+                ann["lm_target_ppl"] = float(t_ppl)
+                ann["lm_delta_ppl"] = float(t_ppl - s_ppl)
 
     percentiles = []
     for item in args.percentiles.split(","):
@@ -192,6 +184,13 @@ def main():
             str(p): percentile(source_ppls, p) for p in percentiles
         },
     }
+
+    data["lm_fluency_scoring"] = summary
+
+    output_path = Path(args.output_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
 
     if args.summary_json:
         summary_path = Path(args.summary_json)
