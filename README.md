@@ -207,6 +207,21 @@ python scripts/replace_tokens.py \
   --mecab-dicdir /var/lib/mecab/dic/unidic
 ```
 
+#### 6.5 キャプションの手動レビュー用Web UI
+```
+python scripts/review_captions_web.py \
+  --input-json stair/stair_simplified_train_replaced_snow.json \
+  --merge-json stair/stair_simplified_train_replaced_snow_fluency.json \
+  --merge-json stair/stair_simplified_train_replaced_snow_similarity.json \
+  --failures-jsonl stair/stair_simplified_train_failures_snow.jsonl \
+  --output-json stair/stair_simplified_train_replaced_snow_reviewed.json \
+  --host 127.0.0.1 \
+  --port 8000
+```
+- `--merge-json` で `lm_*` や `semantic_*` など追加フィールドを統合（`id` でマージ）
+- `--failures-jsonl` に `missing_tokens` が含まれている場合はUIに表示
+- ブラウザで `caption_replaced` を編集し、`Save JSON` で出力を保存
+
 ```
 python scripts/replace_tokens.py \
   --input-json outputs/stair_simplified_val.json \
