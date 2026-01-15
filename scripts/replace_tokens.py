@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -409,7 +410,13 @@ def replace_caption(text, tagger, token_set, replacements):
                 continue
         parts.append(normalize_token(token, token_set, replacements))
         i += 1
-    return "".join(parts)
+    replaced = "".join(parts)
+    # Avoid compound lemmas like "白き物" and repeated 物 artifacts.
+    replaced = re.sub(r"([ぁ-ん一-龥]+い)物", r"\1もの", replaced)
+    replaced = replaced.replace("物々", "もの")
+    replaced = re.sub(r"物{2,}", "もの", replaced)
+    replaced = replaced.replace("ものする", "する")
+    return replaced
 
 
 def main():
