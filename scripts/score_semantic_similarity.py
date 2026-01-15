@@ -7,19 +7,19 @@ from pathlib import Path
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Score fluency with a causal LM and compare to source percentiles."
+        description="Score semantic similarity between source and target captions."
     )
-    parser.add_argument("--lm-model", required=True, help="HF model name or path.")
+    parser.add_argument("--model", required=True, help="HF model name or path.")
     parser.add_argument("--input-json", required=True, help="Input JSON annotations.")
     parser.add_argument(
         "--output-json",
         required=True,
-        help="Output JSON path with per-caption scores added.",
+        help="Output JSON path with similarity scores added.",
     )
     parser.add_argument(
         "--summary-json",
         default=None,
-        help="Optional JSON output with percentile thresholds.",
+        help="Optional JSON output with similarity thresholds.",
     )
     parser.add_argument(
         "--source-field",
@@ -31,7 +31,7 @@ def parse_args():
         default="caption_replaced",
         help="Field name for the simplified caption.",
     )
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-length", type=int, default=256)
     parser.add_argument("--fp16", action="store_true", help="Enable fp16 inference.")
     parser.add_argument("--bf16", action="store_true", help="Enable bf16 inference.")
@@ -41,9 +41,15 @@ def parse_args():
         help="Force device (e.g. cpu, cuda). Defaults to auto.",
     )
     parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Optional similarity threshold to flag low-similarity pairs.",
+    )
+    parser.add_argument(
         "--percentiles",
-        default="0.95,0.99",
-        help="Comma-separated percentiles for source thresholds.",
+        default="0.05,0.01",
+        help="Comma-separated percentiles for similarity thresholds.",
     )
     return parser.parse_args()
 
@@ -53,7 +59,17 @@ def batched(items, batch_size):
         yield items[idx : idx + batch_size]
 
 
-def score_batch(model, tokenizer, texts, device, max_length):
+def mean_pooling(model_output, attention_mask):
+    import torch
+
+    token_embeddings = model_output.last_hidden_state
+    mask = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    summed = (token_embeddings * mask).sum(dim=1)
+    counts = mask.sum(dim=1).clamp(min=1e-9)
+    return summed / counts
+
+
+def embed_texts(model, tokenizer, texts, device, max_length):
     import torch
 
     encoded = tokenizer(
@@ -65,29 +81,10 @@ def score_batch(model, tokenizer, texts, device, max_length):
     )
     input_ids = encoded["input_ids"].to(device)
     attention_mask = encoded["attention_mask"].to(device)
-
     outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-    logits = outputs.logits[:, :-1, :]
-    target_ids = input_ids[:, 1:]
-    target_mask = attention_mask[:, 1:]
-
-    log_probs = torch.log_softmax(logits, dim=-1)
-    token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
-    token_log_probs = token_log_probs * target_mask
-
-    total_logprob = token_log_probs.sum(dim=-1)
-    token_count = target_mask.sum(dim=-1)
-
-    totals = total_logprob.detach().cpu().tolist()
-    counts = token_count.detach().cpu().tolist()
-    return totals, counts
-
-
-def ppl_from_total(total, count):
-    if count == 0:
-        return float("inf")
-    avg = total / count
-    return math.exp(-avg)
+    embeddings = mean_pooling(outputs, attention_mask)
+    embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+    return embeddings
 
 
 def percentile(values, p):
@@ -110,7 +107,7 @@ def percentile(values, p):
 def main():
     args = parse_args()
 
-    from transformers import AutoTokenizer, AutoModelForCausalLM
+    from transformers import AutoTokenizer, AutoModel
     import torch
     from tqdm import tqdm
 
@@ -128,8 +125,8 @@ def main():
         if any(field not in ann for ann in annotations):
             raise SystemExit(f"Missing field '{field}' in annotations.")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.lm_model, use_fast=False)
-    model = AutoModelForCausalLM.from_pretrained(args.lm_model)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
+    model = AutoModel.from_pretrained(args.model)
 
     if args.fp16 or args.bf16:
         dtype = torch.float16 if args.fp16 else torch.bfloat16
@@ -142,8 +139,7 @@ def main():
     model.to(device)
     model.eval()
 
-    source_ppls = []
-    target_ppls = []
+    similarities = []
 
     with torch.inference_mode():
         total = len(annotations)
@@ -153,23 +149,19 @@ def main():
             source_texts = [str(ann[args.source_field]) for ann in batch]
             target_texts = [str(ann[args.target_field]) for ann in batch]
 
-            source_totals, source_counts = score_batch(
+            source_emb = embed_texts(
                 model, tokenizer, source_texts, device, args.max_length
             )
-            target_totals, target_counts = score_batch(
+            target_emb = embed_texts(
                 model, tokenizer, target_texts, device, args.max_length
             )
+            sim = (source_emb * target_emb).sum(dim=1).detach().cpu().tolist()
 
-            for ann, s_total, s_count, t_total, t_count in zip(
-                batch, source_totals, source_counts, target_totals, target_counts
-            ):
-                s_ppl = ppl_from_total(s_total, s_count)
-                t_ppl = ppl_from_total(t_total, t_count)
-                source_ppls.append(s_ppl)
-                target_ppls.append(t_ppl)
-                ann["lm_source_ppl"] = float(s_ppl)
-                ann["lm_target_ppl"] = float(t_ppl)
-                ann["lm_delta_ppl"] = float(t_ppl - s_ppl)
+            for ann, score in zip(batch, sim):
+                similarities.append(score)
+                ann["semantic_similarity"] = float(score)
+                if args.threshold is not None:
+                    ann["semantic_below_threshold"] = bool(score < args.threshold)
 
     percentiles = []
     for item in args.percentiles.split(","):
@@ -179,17 +171,15 @@ def main():
         percentiles.append(float(item))
 
     summary = {
-        "model": args.lm_model,
+        "model": args.model,
         "source_field": args.source_field,
         "target_field": args.target_field,
         "max_length": args.max_length,
         "percentiles": percentiles,
-        "source_thresholds": {
-            str(p): percentile(source_ppls, p) for p in percentiles
-        },
+        "similarity_thresholds": {str(p): percentile(similarities, p) for p in percentiles},
     }
 
-    data["lm_fluency_scoring"] = summary
+    data["semantic_scoring"] = summary
 
     output_path = Path(args.output_json)
     output_path.parent.mkdir(parents=True, exist_ok=True)

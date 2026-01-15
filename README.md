@@ -149,6 +149,22 @@ python scripts/score_fluency.py \
 - 追加されるフィールド: `lm_source_ppl`, `lm_target_ppl`, `lm_delta_ppl`
 - ルートに `lm_fluency_scoring` を追加（source の percentile 閾値など）
 
+#### 6.2.2 source/target の意味類似度スコアリング
+```
+python scripts/score_semantic_similarity.py \
+  --model sonoisa/sentence-bert-base-ja-mean-tokens \
+  --input-json outputs/stair_simplified_train.json \
+  --output-json outputs/stair_simplified_train_scored.json \
+  --summary-json outputs/stair_simplified_train_similarity_summary.json \
+  --source-field source_caption \
+  --target-field caption_replaced \
+  --batch-size 16 \
+  --max-length 256 \
+  --device cpu
+```
+- 追加されるフィールド: `semantic_similarity` （必要なら `--threshold` で `semantic_below_threshold` も付与）
+- ルートに `semantic_scoring` を追加（類似度の percentile 閾値など）
+
 #### 6.3 TOKENS.txt制約の検証
 ```
 python scripts/check_tokens.py \
