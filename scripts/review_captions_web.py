@@ -14,6 +14,7 @@ BASE_FIELDS = {
     "caption",
     "source_caption",
     "caption_replaced",
+    "reviewed",
 }
 
 
@@ -125,8 +126,8 @@ class CaptionStore:
     def extra_fields(self):
         return self._extra_fields
 
-    def get_sorted_ids(self, sort_key, order, missing_only, edited_only):
-        cache_key = (sort_key, order, missing_only, edited_only)
+    def get_sorted_ids(self, sort_key, order, missing_only, edited_only, reviewed_only):
+        cache_key = (sort_key, order, missing_only, edited_only, reviewed_only)
         if cache_key in self.sort_cache:
             return self.sort_cache[cache_key]
 
@@ -143,6 +144,8 @@ class CaptionStore:
             if missing_only and not ann.get("missing_tokens"):
                 continue
             if edited_only and ann["id"] not in self.edited:
+                continue
+            if reviewed_only and not ann.get("reviewed"):
                 continue
             filtered.append(ann)
 
@@ -165,8 +168,17 @@ class CaptionStore:
             self.sort_cache.clear()
             return True
 
-    def page(self, offset, limit, sort_key, order, missing_only, edited_only):
-        ids = self.get_sorted_ids(sort_key, order, missing_only, edited_only)
+    def update_reviewed(self, ann_id, reviewed):
+        with self.lock:
+            ann = self.by_id.get(ann_id)
+            if not ann:
+                return False
+            ann["reviewed"] = bool(reviewed)
+            self.sort_cache.clear()
+            return True
+
+    def page(self, offset, limit, sort_key, order, missing_only, edited_only, reviewed_only):
+        ids = self.get_sorted_ids(sort_key, order, missing_only, edited_only, reviewed_only)
         total = len(ids)
         subset = ids[offset : offset + limit]
         items = []
@@ -183,6 +195,7 @@ class CaptionStore:
                     "missing_tokens": ann.get("missing_tokens") or [],
                     "extra_fields": extra,
                     "edited": ann_id in self.edited,
+                    "reviewed": bool(ann.get("reviewed")),
                 }
             )
         return {"total": total, "items": items}
@@ -237,8 +250,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             order = params.get("order", ["asc"])[0]
             missing_only = params.get("missing_only", ["0"])[0] == "1"
             edited_only = params.get("edited_only", ["0"])[0] == "1"
+            reviewed_only = params.get("reviewed_only", ["0"])[0] == "1"
             payload = self.server.store.page(
-                offset, limit, sort_key, order, missing_only, edited_only
+                offset, limit, sort_key, order, missing_only, edited_only, reviewed_only
             )
             return self._send_json(payload)
         self.send_response(404)
@@ -263,8 +277,20 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "id not found"}, status=404)
             return self._send_json({"ok": True})
 
+        if parsed.path == "/api/reviewed":
+            ann_id = data.get("id")
+            reviewed = data.get("reviewed")
+            if ann_id is None or reviewed is None:
+                return self._send_json({"error": "missing id or reviewed"}, status=400)
+            ok = self.server.store.update_reviewed(ann_id, reviewed)
+            if not ok:
+                return self._send_json({"error": "id not found"}, status=404)
+            return self._send_json({"ok": True})
+
         if parsed.path == "/api/save":
+            print("Saving output JSON...")
             self.server.store.save()
+            print("Saved.")
             return self._send_json({"ok": True, "output": str(self.server.store.output_path)})
 
         self.send_response(404)
@@ -413,6 +439,13 @@ def render_index():
       flex-wrap: wrap;
       margin-bottom: 6px;
     }
+    .reviewed-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
     .source, .caption, .replaced {
       margin-top: 6px;
     }
@@ -458,6 +491,13 @@ def render_index():
         <option value="1">edited only</option>
       </select>
     </label>
+    <label>
+      <span>Reviewed</span>
+      <select id="reviewed-only">
+        <option value="0">all</option>
+        <option value="1">reviewed only</option>
+      </select>
+    </label>
     <button id="apply-filters" class="secondary">Apply</button>
     <button id="save-all">Save JSON</button>
     <div id="status"></div>
@@ -474,6 +514,7 @@ def render_index():
       order: "asc",
       missingOnly: "0",
       editedOnly: "0",
+      reviewedOnly: "0",
       total: 0,
       fields: [],
       fluencyThreshold: null,
@@ -513,7 +554,8 @@ def render_index():
         sort: state.sort,
         order: state.order,
         missing_only: state.missingOnly,
-        edited_only: state.editedOnly
+        edited_only: state.editedOnly,
+        reviewed_only: state.reviewedOnly
       });
       const res = await fetch("/api/items?" + params.toString());
       const data = await res.json();
@@ -557,6 +599,10 @@ def render_index():
               <span class="${item.edited ? "edited" : ""}">${item.edited ? "edited" : ""}</span>
             </div>
             <div class="scores"></div>
+            <label class="reviewed-toggle">
+              <input type="checkbox" data-reviewed-id="${item.id}" ${item.reviewed ? "checked" : ""} />
+              reviewed
+            </label>
           </div>
           <div class="missing"></div>
           <div class="source"><strong>source</strong> ${item.source_caption ?? ""}</div>
@@ -600,6 +646,12 @@ def render_index():
           setTimeout(() => (btn.textContent = "Update"), 800);
         };
       });
+      rows.querySelectorAll("input[data-reviewed-id]").forEach(input => {
+        input.onchange = async () => {
+          const id = Number(input.dataset.reviewedId);
+          await updateReviewed(id, input.checked);
+        };
+      });
     }
 
     async function updateCaption(id, text) {
@@ -610,21 +662,56 @@ def render_index():
       });
     }
 
+    async function updateReviewed(id, reviewed) {
+      await fetch("/api/reviewed", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({id: id, reviewed: reviewed})
+      });
+    }
+
     document.getElementById("apply-filters").onclick = async () => {
       state.sort = document.getElementById("sort-field").value;
       state.order = document.getElementById("sort-order").value;
       state.limit = Number(document.getElementById("page-size").value) || state.limit;
       state.missingOnly = document.getElementById("missing-only").value;
       state.editedOnly = document.getElementById("edited-only").value;
+      state.reviewedOnly = document.getElementById("reviewed-only").value;
       state.offset = 0;
       await fetchPage();
     };
 
     document.getElementById("save-all").onclick = async () => {
-      const res = await fetch("/api/save", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
-      const data = await res.json();
-      document.getElementById("status").textContent = data.output ? `saved: ${data.output}` : "saved";
+      const status = document.getElementById("status");
+      status.textContent = "saving...";
+      try {
+        const res = await fetch("/api/save", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          status.textContent = data.error ? `save failed: ${data.error}` : "save failed";
+          return;
+        }
+        status.textContent = data.output ? `saved: ${data.output}` : "saved";
+      } catch (err) {
+        status.textContent = `save failed: ${err}`;
+      }
     };
+
+    setInterval(async () => {
+      const status = document.getElementById("status");
+      status.textContent = "auto saving...";
+      try {
+        const res = await fetch("/api/save", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          status.textContent = data.error ? `auto save failed: ${data.error}` : "auto save failed";
+          return;
+        }
+        status.textContent = data.output ? `auto saved: ${data.output}` : "auto saved";
+      } catch (err) {
+        status.textContent = `auto save failed: ${err}`;
+      }
+    }, 10 * 60 * 1000);
 
     fetchMeta();
   </script>
