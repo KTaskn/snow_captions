@@ -239,3 +239,32 @@ we need fugashi
 apt update
 apt install -y mecab libmecab-dev mecab-ipadic-utf8 unidic-mecab
 ```
+
+#### 6.6 サンプリング候補のJSONL出力とTOKENSフィルタ
+まずサンプリング候補をJSONLとして保存します（1行=1入力、候補文とスコアを保持）。
+```
+python scripts/generate_stair_simplified_samples_jsonl.py \
+  --model outputs/t5-simplify/final \
+  --input-json STAIR-captions/stair_captions_v1.2_train.json \
+  --output-jsonl outputs/stair_simplified_train_samples.jsonl \
+  --do-sample \
+  --num-beams 1 \
+  --num-return-sequences 16 \
+  --top-p 0.95 \
+  --temperature 1.1 \
+  --tokenize fugashi \
+  --mecabrc /etc/mecabrc \
+  --mecab-dicdir /var/lib/mecab/dic/unidic
+```
+
+次にJSONLをTOKENSで判定し、適合候補のうちスコア最大を採用します。
+全候補が不適合の場合は `caption` を `null` にします。
+```
+python scripts/filter_stair_simplified_samples_jsonl.py \
+  --input-json STAIR-captions/stair_captions_v1.2_train.json \
+  --samples-jsonl outputs/stair_simplified_train_samples.jsonl \
+  --output-json outputs/stair_simplified_train_filtered.json \
+  --tokenize fugashi \
+  --mecabrc /etc/mecabrc \
+  --mecab-dicdir /var/lib/mecab/dic/unidic
+```
