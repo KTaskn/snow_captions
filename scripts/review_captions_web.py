@@ -126,8 +126,8 @@ class CaptionStore:
     def extra_fields(self):
         return self._extra_fields
 
-    def get_sorted_ids(self, sort_key, order, missing_only, edited_only, reviewed_only):
-        cache_key = (sort_key, order, missing_only, edited_only, reviewed_only)
+    def get_sorted_ids(self, sort_key, order, missing_only, edited_only, unreviewed_only):
+        cache_key = (sort_key, order, missing_only, edited_only, unreviewed_only)
         if cache_key in self.sort_cache:
             return self.sort_cache[cache_key]
 
@@ -145,7 +145,7 @@ class CaptionStore:
                 continue
             if edited_only and ann["id"] not in self.edited:
                 continue
-            if reviewed_only and not ann.get("reviewed"):
+            if unreviewed_only and ann.get("reviewed"):
                 continue
             filtered.append(ann)
 
@@ -177,8 +177,8 @@ class CaptionStore:
             self.sort_cache.clear()
             return True
 
-    def page(self, offset, limit, sort_key, order, missing_only, edited_only, reviewed_only):
-        ids = self.get_sorted_ids(sort_key, order, missing_only, edited_only, reviewed_only)
+    def page(self, offset, limit, sort_key, order, missing_only, edited_only, unreviewed_only):
+        ids = self.get_sorted_ids(sort_key, order, missing_only, edited_only, unreviewed_only)
         total = len(ids)
         subset = ids[offset : offset + limit]
         items = []
@@ -250,9 +250,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             order = params.get("order", ["asc"])[0]
             missing_only = params.get("missing_only", ["0"])[0] == "1"
             edited_only = params.get("edited_only", ["0"])[0] == "1"
-            reviewed_only = params.get("reviewed_only", ["0"])[0] == "1"
+            unreviewed_only = params.get("unreviewed_only", ["0"])[0] == "1"
             payload = self.server.store.page(
-                offset, limit, sort_key, order, missing_only, edited_only, reviewed_only
+                offset, limit, sort_key, order, missing_only, edited_only, unreviewed_only
             )
             return self._send_json(payload)
         self.send_response(404)
@@ -495,7 +495,7 @@ def render_index():
       <span>Reviewed</span>
       <select id="reviewed-only">
         <option value="0">all</option>
-        <option value="1">reviewed only</option>
+        <option value="1">unreviewed only</option>
       </select>
     </label>
     <button id="apply-filters" class="secondary">Apply</button>
@@ -514,7 +514,7 @@ def render_index():
       order: "asc",
       missingOnly: "0",
       editedOnly: "0",
-      reviewedOnly: "0",
+      unreviewedOnly: "0",
       total: 0,
       fields: [],
       fluencyThreshold: null,
@@ -555,7 +555,7 @@ def render_index():
         order: state.order,
         missing_only: state.missingOnly,
         edited_only: state.editedOnly,
-        reviewed_only: state.reviewedOnly
+        unreviewed_only: state.unreviewedOnly
       });
       const res = await fetch("/api/items?" + params.toString());
       const data = await res.json();
@@ -676,7 +676,7 @@ def render_index():
       state.limit = Number(document.getElementById("page-size").value) || state.limit;
       state.missingOnly = document.getElementById("missing-only").value;
       state.editedOnly = document.getElementById("edited-only").value;
-      state.reviewedOnly = document.getElementById("reviewed-only").value;
+      state.unreviewedOnly = document.getElementById("reviewed-only").value;
       state.offset = 0;
       await fetchPage();
     };
