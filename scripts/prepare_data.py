@@ -18,10 +18,10 @@ def _require_pandas():
 def parse_args():
     parser = argparse.ArgumentParser(description="Prepare train/valid JSONL from Excel files.")
     parser.add_argument(
-        "--input-xlsx",
+        "--input-files",
         nargs="+",
         required=True,
-        help="One or more .xlsx files (e.g., dataset/T15-2020.1.7.xlsx).",
+        help="One or more .xlsx or .csv files (e.g., dataset/T15-2020.1.7.xlsx).",
     )
     parser.add_argument(
         "--sheet",
@@ -61,11 +61,17 @@ def main():
     tgt_col = args.target_column
     frames = []
     file_stats = []
-    for path in args.input_xlsx:
+    for path in args.input_files:
+        suffix = Path(path).suffix.lower()
         try:
-            df = pd.read_excel(path, sheet_name=args.sheet)
+            if suffix in {".csv"}:
+                df = pd.read_csv(path)
+            else:
+                df = pd.read_excel(path, sheet_name=args.sheet)
         except ValueError:
             # Fallback to the first sheet when the named sheet is missing.
+            if suffix in {".csv"}:
+                raise
             df = pd.read_excel(path, sheet_name=0)
         if src_col not in df.columns or tgt_col not in df.columns:
             raise SystemExit(

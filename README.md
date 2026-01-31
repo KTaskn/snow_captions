@@ -10,8 +10,9 @@
 ## 手順（例）
 ### 1. データ準備
 ```
-python scripts/prepare_data.py --input-xlsx dataset/T15-2020.1.7.xlsx dataset/T23-2020.1.7.xlsx
+python scripts/prepare_data.py --input-files dataset/T15-2020.1.7.xlsx dataset/T23-2020.1.7.xlsx
 ```
+- `.xlsx` と同様のフォーマットの `.csv` も指定可能
 - 出力: `data/processed/train.jsonl`, `data/processed/valid.jsonl`
 - 統計: `data/processed/stats.json`, `data/processed/stats_by_file.json`
 
